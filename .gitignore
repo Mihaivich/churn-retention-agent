@@ -28,3 +28,4 @@ venv/
 # DVC 缓存
 .dvc/cache/
 .dvc/tmp/
+/reports
