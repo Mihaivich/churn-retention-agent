@@ -1,0 +1,5 @@
+training:
+  model_type: "LogisticRegression"
+  hyperparameters:
+    C: [0.1, 1.0, 10.0]
+    solver: ['liblinear']

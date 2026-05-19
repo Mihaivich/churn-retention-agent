@@ -1,0 +1,34 @@
+stages:
+  data_ingest:
+    cmd: python3 src/data_ingest.py --input-path data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv --output-path data/staged
+    deps:
+      - data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv
+      - src/data_ingest.py
+    outs:
+      - data/staged
+
+  data_validation:
+    cmd: python3 src/data_validation.py --staged-data-path data/staged
+    deps:
+      - data/staged
+      - src/data_validation.py
+
+  train_and_tune:
+    cmd: python3 src/train_and_tune.py --staged-data-path data/staged --model-output-path model
+    deps:
+      - data/staged
+      - src/train_and_tune.py
+    params:
+      - training.model_type
+      - training.hyperparameters
+    outs:
+      - model
+
+  evaluate:
+    cmd: python3 src/evaluate.py --model-path model --staged-data-path data/staged --metrics-path reports
+    deps:
+      - model
+      - data/staged
+      - src/evaluate.py
+    outs:
+      - reports
