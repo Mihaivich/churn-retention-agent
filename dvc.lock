@@ -1,0 +1,85 @@
+schema: '2.0'
+stages:
+  data_ingest:
+    cmd: python3 src/data_ingest.py --input-path data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv
+      --output-path data/staged
+    deps:
+    - path: data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv
+      hash: md5
+      md5: 0f9de68e012bd3aed5fa7cdc9fc421af
+      size: 977501
+    - path: src/data_ingest.py
+      hash: md5
+      md5: efcd80abcd9d72d09ccad9bde8906e7a
+      size: 749
+    outs:
+    - path: data/staged
+      hash: md5
+      md5: f0a54578164e8c988b279f328114457e.dir
+      size: 970164
+      nfiles: 1
+  data_validation:
+    cmd: python3 src/data_validation.py --staged-data-path data/staged
+    deps:
+    - path: data/staged
+      hash: md5
+      md5: f0a54578164e8c988b279f328114457e.dir
+      size: 970164
+      nfiles: 1
+    - path: src/data_validation.py
+      hash: md5
+      md5: 99b5bea5bd12df4b30bd1105c8aa7582
+      size: 1017
+  train_and_tune:
+    cmd: python3 src/train_and_tune.py --staged-data-path data/staged --model-output-path
+      model
+    deps:
+    - path: data/staged
+      hash: md5
+      md5: f0a54578164e8c988b279f328114457e.dir
+      size: 970164
+      nfiles: 1
+    - path: src/train_and_tune.py
+      hash: md5
+      md5: c4dd621db028068ac937e81bb59ef3fe
+      size: 2228
+    params:
+      params.yaml:
+        training.hyperparameters:
+          C:
+          - 0.1
+          - 1.0
+          - 10.0
+          solver:
+          - liblinear
+        training.model_type: LogisticRegression
+    outs:
+    - path: model
+      hash: md5
+      md5: 95fb8a7eb7aee1d6d69414e4cc79b1b7.dir
+      size: 126941
+      nfiles: 1
+  evaluate:
+    cmd: python3 src/evaluate.py --model-path model --staged-data-path data/staged
+      --metrics-path reports
+    deps:
+    - path: data/staged
+      hash: md5
+      md5: f0a54578164e8c988b279f328114457e.dir
+      size: 970164
+      nfiles: 1
+    - path: model
+      hash: md5
+      md5: 95fb8a7eb7aee1d6d69414e4cc79b1b7.dir
+      size: 126941
+      nfiles: 1
+    - path: src/evaluate.py
+      hash: md5
+      md5: 9fe060c9ae87a2d090a56ca9ddc19f5e
+      size: 1984
+    outs:
+    - path: reports
+      hash: md5
+      md5: 5a8311263bc1f3d57a97cbb2e154b822.dir
+      size: 18419
+      nfiles: 2

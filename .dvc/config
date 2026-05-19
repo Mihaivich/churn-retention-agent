@@ -1,4 +1,6 @@
 [core]
-    remote = myremote
+    remote = localremote
 ['remote "myremote"']
     url = s3://mlops-churn-dvc-storage-20250809
+['remote "localremote"']
+    url = /tmp/dvc-cache-churn
