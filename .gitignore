@@ -29,3 +29,4 @@ venv/
 .dvc/cache/
 .dvc/tmp/
 /reports
+chroma_db/

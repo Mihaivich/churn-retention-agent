@@ -1,9 +1,14 @@
 """
 agent/runner.py  — Google Gemini 版本 (google-genai SDK)
 
+工具：
+  1. churn_predict   — 预测流失概率
+  2. retrieve_cases  — RAG 检索相似历史案例
+
 运行前:
     pip install google-genai
     export GEMINI_API_KEY="AIza..."
+    python tools/build_knowledge_base.py  # 首次需构建知识库
 
 运行:
     python agent/runner.py
@@ -16,14 +21,18 @@ from google import genai
 from google.genai import types
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tools.churn_predict import churn_predict_tool, TOOL_SCHEMA
+from tools.churn_predict import churn_predict_tool, TOOL_SCHEMA as CHURN_SCHEMA
+from tools.retrieve_cases import retrieve_cases_tool, TOOL_SCHEMA as RETRIEVE_SCHEMA
 
 # ── 配置客户端 ────────────────────────────────────────────────────
 client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 MODEL_NAME = "gemini-3.1-flash-lite"
 
 # ── 工具分发表 ────────────────────────────────────────────────────
-TOOLS = {"churn_predict": churn_predict_tool}
+TOOLS = {
+    "churn_predict": churn_predict_tool,
+    "retrieve_cases": retrieve_cases_tool,
+}
 
 # ── 把 Anthropic schema 转成 Gemini FunctionDeclaration ──────────
 def _to_gemini_schema(prop: dict) -> dict:
@@ -51,25 +60,34 @@ def build_gemini_tool(schema: dict) -> types.Tool:
     )
     return types.Tool(function_declarations=[fn])
 
-GEMINI_TOOLS = [build_gemini_tool(TOOL_SCHEMA)]
+# 两个工具合并进同一个 Tool 对象（Gemini 推荐的做法）
+GEMINI_TOOLS = [types.Tool(function_declarations=[
+    build_gemini_tool(CHURN_SCHEMA).function_declarations[0],
+    build_gemini_tool(RETRIEVE_SCHEMA).function_declarations[0],
+])]
 
 SYSTEM_PROMPT = """你是一名电信公司的客户留存专家 Agent。
 
-工作流程：
-1. 先调用 churn_predict 工具评估客户流失风险
-2. 根据风险等级和风险因素，制定具体的挽留方案
-3. 给出清晰的行动建议，包括优先级和沟通话术
+你的标准工作流程（每次必须完整执行两步）：
+1. 调用 churn_predict 评估客户流失风险，获取概率、风险等级和风险因素
+2. 调用 retrieve_cases 检索相似历史流失案例，获取经过验证的挽留策略
+3. 综合两个工具的结果，给出结构化挽留建议
+
+输出格式：
+- 风险评估：概率、等级、核心风险因素
+- 历史参考：相似案例数、最高相似度、历史成功策略
+- 行动建议：按优先级排列，每条对应具体风险因素或历史案例
+- 沟通话术：1-2 句可直接使用的开场白
 
 原则：
-- 高风险（≥70%）：立即介入，给出具体优惠方案
-- 中风险（40-70%）：近期跟进，做满意度回访
-- 低风险（<40%）：正常维护，可考虑向上销售
-- 每个建议必须基于工具返回的具体风险因素"""
+- 高风险（≥70%）立即介入；中风险（40-70%）近期跟进；低风险（<40%）常规维护
+- 所有建议必须基于工具返回的数据，不得凭空生成
+- retrieve_cases 的 risk_level 参数使用 churn_predict 返回的值"""
 
 
 def run_agent(user_message: str, verbose: bool = True) -> str:
     """
-    ReAct 循环：send_message → function_call → send tool result → final answer
+    ReAct 循环：generate_content → function_call → tool result → final answer
     google-genai SDK 用 contents 列表维护对话历史。
     """
     if verbose:
@@ -82,7 +100,7 @@ def run_agent(user_message: str, verbose: bool = True) -> str:
         parts=[types.Part(text=user_message)]
     )]
 
-    for step in range(5):
+    for step in range(6):
         response = client.models.generate_content(
             model=MODEL_NAME,
             contents=contents,
@@ -93,7 +111,7 @@ def run_agent(user_message: str, verbose: bool = True) -> str:
         )
 
         candidate = response.candidates[0]
-        contents.append(candidate.content)   # 把模型回复加入历史
+        contents.append(candidate.content)
 
         # 检查是否有 function call
         fn_calls = [p.function_call for p in candidate.content.parts
@@ -109,7 +127,7 @@ def run_agent(user_message: str, verbose: bool = True) -> str:
                 print(f"\n[最终回答]\n{'-'*40}\n{final}")
             return final
 
-        # 执行工具，收集所有结果
+        # 执行工具，收集结果
         tool_result_parts = []
         for fn in fn_calls:
             args = dict(fn.args)
@@ -120,8 +138,10 @@ def run_agent(user_message: str, verbose: bool = True) -> str:
             result = TOOLS[fn.name](**args) if fn.name in TOOLS else {"error": f"未知工具: {fn.name}"}
 
             if verbose:
-                print(f"\n[Step {step+1}] 工具返回:")
-                print(f"  {json.dumps(result, ensure_ascii=False, indent=2)}")
+                result_str = json.dumps(result, ensure_ascii=False, indent=2)
+                if len(result_str) > 800:
+                    result_str = result_str[:800] + "\n  ... (truncated)"
+                print(f"\n[Step {step+1}] 工具返回:\n  {result_str}")
 
             tool_result_parts.append(types.Part(
                 function_response=types.FunctionResponse(
