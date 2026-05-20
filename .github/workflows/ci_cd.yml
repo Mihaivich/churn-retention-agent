@@ -1,0 +1,114 @@
+# .github/workflows/ci_cd.yml
+# CI: pytest on every push/PR
+# CD: sync to HF Spaces on push to main (tests must pass first)
+
+name: CI / CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Run Tests ────────────────────────────────────────────
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  # ── Job 2: Sync to HF Spaces ────────────────────────────────────
+  # Only runs on push to main AND after tests pass
+  deploy:
+    name: Sync to HF Spaces
+    runs-on: ubuntu-latest
+    needs: test                        # 测试通过才执行
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install huggingface_hub
+        run: pip install huggingface_hub
+
+      - name: Sync to HF Spaces
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python - << 'PYEOF'
+          import os
+          from pathlib import Path
+          from huggingface_hub import HfApi
+
+          HF_USERNAME = "ikunikunikun"
+          SPACE_NAME  = "churn-retention-agent"
+          REPO_ID     = f"{HF_USERNAME}/{SPACE_NAME}"
+          TOKEN       = os.environ["HF_TOKEN"]
+
+          api = HfApi(token=TOKEN)
+
+          # 需要同步的文件（chroma_db 和 model 已在 Space 里，只同步代码变更）
+          SYNC_FILES = [
+              ("app.py",                        "app.py"),
+              ("requirements.txt",              "requirements.txt"),
+              ("Dockerfile",                    "Dockerfile"),
+              ("README_HF.md",                  "README.md"),
+              ("tools/__init__.py",             "tools/__init__.py"),
+              ("tools/churn_predict.py",        "tools/churn_predict.py"),
+              ("tools/retrieve_cases.py",       "tools/retrieve_cases.py"),
+              ("tools/build_knowledge_base.py", "tools/build_knowledge_base.py"),
+              ("agent/__init__.py",             "agent/__init__.py"),
+              ("agent/runner.py",               "agent/runner.py"),
+              ("inference/predict.py",          "inference/predict.py"),
+          ]
+
+          root = Path(".")
+          print(f"Syncing {len(SYNC_FILES)} files to {REPO_ID}...")
+
+          for local, remote in SYNC_FILES:
+              p = root / local
+              if not p.exists():
+                  print(f"  SKIP (not found): {local}")
+                  continue
+              try:
+                  api.upload_file(
+                      path_or_fileobj=str(p),
+                      path_in_repo=remote,
+                      repo_id=REPO_ID,
+                      repo_type="space",
+                      commit_message=f"ci: sync {remote}",
+                  )
+                  print(f"  ✓ {remote}")
+              except Exception as e:
+                  print(f"  ✗ {remote}: {e}")
+                  raise
+
+          print("Sync complete.")
+          PYEOF

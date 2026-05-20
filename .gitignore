@@ -30,3 +30,6 @@ venv/
 .dvc/tmp/
 /reports
 chroma_db/
+upload_to_hf.py
+deploy_to_hf.sh
+.gitignore_hf
