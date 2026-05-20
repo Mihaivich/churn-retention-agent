@@ -857,13 +857,20 @@ def check_system_status():
     gemini_status = "active" if _gemini_client is not None else "demo"
     return predictor_status, gemini_status
 
-def predict_locally_fallback(params):
-    """In-process model runner fallback if local uvicorn server is offline."""
+@st.cache_resource(show_spinner=False)
+def _load_local_model():
     model_path = Path("model/model.joblib")
     if not model_path.exists():
-        return {"success": False, "error": "Model file model.joblib not found. Run dvc repro."}
+        return None
+    return joblib.load(model_path)
+
+def predict_locally_fallback(params):
+    """In-process model runner fallback if local uvicorn server is offline."""
     try:
-        model = joblib.load(model_path)
+        model = _load_local_model()
+        if model is None:
+            return {"success": False, "error": "Model file model.joblib not found. Run dvc repro."}
+            
         feature_columns = list(model.feature_names_in_)
         
         defaults = {

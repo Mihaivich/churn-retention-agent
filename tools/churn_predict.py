@@ -63,7 +63,7 @@ def _build_payload(features: dict) -> dict:
 
 
 def _call_local(payload: dict) -> float:
-    resp = requests.post(f"{LOCAL_ENDPOINT}/invocations", json=payload, timeout=10)
+    resp = requests.post(f"{LOCAL_ENDPOINT}/invocations", json=payload, timeout=2)
     resp.raise_for_status()
     return float(resp.json()["predictions"][0])
 

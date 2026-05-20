@@ -66,10 +66,10 @@ DEFAULTS = {
     "TotalCharges": 70.0,
 }
 
-def preprocess(instance: dict) -> pd.DataFrame:
-    """填充缺失字段，保持模型期望的列顺序"""
-    row = {**DEFAULTS, **instance}           # 传入值覆盖默认值
-    df = pd.DataFrame([row])
+def preprocess_batch(instances: list[dict]) -> pd.DataFrame:
+    """填充缺失字段，保持模型期望的列顺序（支持批量）"""
+    rows = [{**DEFAULTS, **inst} for inst in instances]
+    df = pd.DataFrame(rows)
     # 补齐缺失列，按模型训练时的顺序排列
     for col in FEATURE_COLUMNS:
         if col not in df.columns:
@@ -81,11 +81,13 @@ def preprocess(instance: dict) -> pd.DataFrame:
 @app.post("/invocations", response_model=PredictResponse)
 async def predict(request: PredictRequest):
     try:
-        predictions = []
-        for instance in request.instances:
-            df = preprocess(instance)
-            prob = float(model.predict_proba(df)[0][1])
-            predictions.append(prob)
+        if not request.instances:
+            return PredictResponse(predictions=[])
+            
+        df = preprocess_batch(request.instances)
+        probs = model.predict_proba(df)[:, 1]
+        
+        predictions = [float(p) for p in probs]
         return PredictResponse(predictions=predictions)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
