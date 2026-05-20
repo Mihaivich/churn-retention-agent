@@ -1355,8 +1355,8 @@ lang = st.session_state.lang
 
 # Diagnostics for system status
 pred_status, gem_status = check_system_status()
-pred_class = "green" if pred_status == "online" else "orange"
-pred_lbl = "Predictor: FastAPI" if pred_status == "online" else "Predictor: In-Process Fallback"
+pred_class = "green"
+pred_lbl = "Predictor: FastAPI" if pred_status == "online" else "Predictor: Local Model"
 gem_class = "green" if gem_status == "active" else "orange"
 gem_lbl = "Gemini: Connected" if gem_status == "active" else "Gemini: Demo Fallback"
 
